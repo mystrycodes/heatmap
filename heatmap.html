@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Correlation Heatmap</title>
+  <script src="https://d3js.org/d3.v6.min.js"></script>
+  <style>
+    .cell {
+      stroke: #fff;
+      stroke-width: 1px;
+    }
+    .tooltip {
+      position: absolute;
+      text-align: center;
+      padding: 8px;
+      font: 12px sans-serif;
+      background: lightsteelblue;
+      border: 0px;
+      border-radius: 8px;
+      pointer-events: none;
+    }
+    text {
+      font-family: sans-serif;
+    }
+  </style>
+</head>
+<body>
+<div id="chart"></div>
+<script>
+  // URL to the cleaned CSV dataset.
+  const csvUrl = "https://gist.githubusercontent.com/mystrycodes/dc37c95ed9bfae8f17cf7a9343174118/raw/390386e2a7b4672d9039ae7473055a4f4d321623/ClimateAndCropProductionMergedAndCleaned";
+
+  // Columns to exclude from the correlation analysis.
+  const excludeCols = ["Month", "Latitude", "Longitude", "Altitude (m)"];
+
+  // Function to check if a value is numeric.
+  function isNumeric(n) {
+    return !isNaN(parseFloat(n)) && isFinite(n);
+  }
+
+  // Function to compute Pearson correlation coefficient.
+  function pearson(x, y) {
+    const n = x.length;
+    const meanX = d3.mean(x);
+    const meanY = d3.mean(y);
+    let numerator = 0, denomX = 0, denomY = 0;
+    for (let i = 0; i < n; i++) {
+      const diffX = x[i] - meanX;
+      const diffY = y[i] - meanY;
+      numerator += diffX * diffY;
+      denomX += diffX * diffX;
+      denomY += diffY * diffY;
+    }
+    return numerator / Math.sqrt(denomX * denomY);
+  }
+
+  d3.csv(csvUrl).then(data => {
+    // Identify numeric columns from the first row, excluding those in excludeCols.
+    let sample = data[0];
+    let numericCols = [];
+    for (let col in sample) {
+      if (excludeCols.indexOf(col) >= 0) continue;
+      if (isNumeric(sample[col])) {
+        numericCols.push(col);
+      }
+    }
+
+    // Convert values for each numeric column.
+    data.forEach(d => {
+      numericCols.forEach(col => {
+        d[col] = +d[col];
+      });
+    });
+
+    // Build the correlation matrix.
+    let matrix = [];
+    numericCols.forEach((col1) => {
+      numericCols.forEach((col2) => {
+        const arr1 = data.map(d => d[col1]);
+        const arr2 = data.map(d => d[col2]);
+        const corr = pearson(arr1, arr2);
+        matrix.push({x: col2, y: col1, value: corr});
+      });
+    });
+
+    // Dimensions and settings.
+    const margin = {top: 100, right: 100, bottom: 100, left: 100};
+    const cellSize = 25;
+    const width = numericCols.length * cellSize;
+    const height = numericCols.length * cellSize;
+
+    const svg = d3.select("#chart").append("svg")
+      .attr("width", width + margin.left + margin.right)
+      .attr("height", height + margin.top + margin.bottom)
+      .append("g")
+      .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+    // Color scale: diverging from -1 to 1.
+    const colorScale = d3.scaleSequential()
+      .domain([-1, 1])
+      .interpolator(d3.interpolateRdBu);
+
+    // Create a tooltip.
+    const tooltip = d3.select("body").append("div")
+      .attr("class", "tooltip")
+      .style("opacity", 0);
+
+    // Draw cells for each pair.
+    svg.selectAll("rect")
+      .data(matrix)
+      .enter().append("rect")
+      .attr("class", "cell")
+      .attr("x", d => numericCols.indexOf(d.x) * cellSize)
+      .attr("y", d => numericCols.indexOf(d.y) * cellSize)
+      .attr("width", cellSize)
+      .attr("height", cellSize)
+      .attr("fill", d => colorScale(d.value))
+      .on("mouseover", function(event, d) {
+         tooltip.transition().duration(200).style("opacity", 0.9);
+         tooltip.html(d.y + " vs " + d.x + "<br/>" + d.value.toFixed(2))
+            .style("left", (event.pageX + 5) + "px")
+            .style("top", (event.pageY - 28) + "px");
+      })
+      .on("mouseout", function() {
+         tooltip.transition().duration(500).style("opacity", 0);
+      });
+
+    // Add X-axis labels (rotated).
+    svg.selectAll(".xLabel")
+      .data(numericCols)
+      .enter().append("text")
+      .attr("x", (d, i) => i * cellSize + cellSize/2)
+      .attr("y", -5)
+      .attr("text-anchor", "middle")
+      .attr("transform", (d, i) => "rotate(-90," + (i * cellSize + cellSize/2) + ",-5)")
+      .text(d => d)
+      .style("font-size", "10px");
+
+    // Add Y-axis labels.
+    svg.selectAll(".yLabel")
+      .data(numericCols)
+      .enter().append("text")
+      .attr("x", -5)
+      .attr("y", (d, i) => i * cellSize + cellSize/2)
+      .attr("text-anchor", "end")
+      .text(d => d)
+      .style("font-size", "10px");
+  });
+</script>
+</body>
+</html>
